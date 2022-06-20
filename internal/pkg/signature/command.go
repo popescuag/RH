@@ -60,6 +60,8 @@ func createSignatureFile(input io.ReadCloser, inputFileSize int64, chunkSize int
 			return err
 		}
 		totalBytesRead += int64(br)
+		//Use only up to the number of bytes read from the reader to compute the sum
+		//The last chunk may be smaller than the rest
 		_, err = output.Write([]byte(fmt.Sprintf("%x", sha256.Sum256(chunk[:br]))))
 		if err != nil {
 			return err
@@ -75,15 +77,15 @@ func createSignatureFile(input io.ReadCloser, inputFileSize int64, chunkSize int
 func computeChunkSize(fileSize int64) int {
 	chunkSize := 512
 	if fileSize > 5<<20 && fileSize <= 50<<20 {
-		chunkSize = 4 << 10
+		chunkSize = 4 << 10 //4k
 	} else if fileSize > 50<<20 && fileSize <= 100<<20 {
-		chunkSize = 64 << 10
+		chunkSize = 64 << 10 //64k
 	} else if fileSize > 100<<20 && fileSize <= 300<<20 {
-		chunkSize = 256 << 10
+		chunkSize = 256 << 10 //256k
 	} else if fileSize > 300<<20 && fileSize <= 1024<<20 {
-		chunkSize = 1 << 20
+		chunkSize = 1 << 20 //1M
 	} else if fileSize > 1024<<20 {
-		chunkSize = 4 << 20
+		chunkSize = 4 << 20 //4M
 	}
 	return chunkSize
 }
