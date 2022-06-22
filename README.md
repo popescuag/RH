@@ -1,5 +1,12 @@
 # RH
 
-mkfile -n 1g temp_1GB_file  
+## Usage
+### Signature
+`go run cmd/main.go signature /path/to/input/file /path/to/signature/file`
 
-go run cmd/main.go signature ~/work/RH/temp_1GB_file ~/work/RH/signature 
+From other modules use `api.GetSignature`
+
+### Delta
+`go run cmd/main.go delta /path/to/signature/file /path/to/new/file /path/to/delta/file`
+
+From other modules use `api.GetDelta`

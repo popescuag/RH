@@ -11,7 +11,7 @@ import (
 const (
 	SIGNATURE_CMD = "signature"
 	DELTA_CMD     = "delta"
-	min_file_size = 1 << 10
+	min_file_size = 64
 )
 
 func ValidateInputParams(params []string) error {
@@ -72,7 +72,7 @@ func validateDeltaParams(params []string) error {
 		return fmt.Errorf("file %v cannot be found", params[1])
 	}
 
-	_, err = signature.Parse(params[0])
+	_, err = signature.ParseFromFile(params[0])
 	if err != nil {
 		return fmt.Errorf("file %v is not a valid signature file", params[0])
 	}

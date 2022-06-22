@@ -2,8 +2,6 @@ package signature
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"fmt"
 	"io"
 	"log"
 	"sync"
@@ -65,9 +63,12 @@ func TestCreateSignatures(t *testing.T) {
 			go func(r *io.PipeReader, len int, t *testing.T) {
 				output := make([]byte, len)
 				br, _ := io.ReadFull(pro, output)
+				// t.Logf("%v\n%v", tc.name, string(output))
+				// t.Logf("\n%v", string(tc.expectedResult))
 				equal := bytes.Compare(output, tc.expectedResult)
 				assert.Equal(t, 0, equal)
 				assert.Equal(t, len, br)
+				//t.Logf("%v %v", len, br)
 				wg.Done()
 			}(pro, len(tc.expectedResult), t)
 
@@ -86,11 +87,21 @@ func buildInput1() []byte {
 }
 
 func buildOutput1() []byte {
+	buf := new(bytes.Buffer)
 	// 3 chunks, first 2 512, last 10 bytes
-	sum512 := sha256.Sum256(make([]byte, 512))
-	sum10 := sha256.Sum256(make([]byte, 10))
-	pattern := METADATA_FORMAT + "%x%x%x"
-	return []byte(fmt.Sprintf(pattern, 512, 3, 10, sum512, sum512, sum10))
+	chunk512 := make([]byte, 512)
+	chunk10 := make([]byte, 10)
+
+	md := signatureMetadata{
+		ChunkSize:  512,
+		ChunkCount: 3,
+	}
+	md.write(buf)
+	writeChecksum(chunk512, buf)
+	writeChecksum(chunk512, buf)
+	writeChecksum(chunk10, buf)
+
+	return buf.Bytes()
 }
 
 func buildInput2() []byte {
@@ -98,10 +109,19 @@ func buildInput2() []byte {
 }
 
 func buildOutput2() []byte {
+	buf := new(bytes.Buffer)
 	// 2 chunks, 512 bytes each
-	sum512 := sha256.Sum256(make([]byte, 512))
-	pattern := METADATA_FORMAT + "%x%x"
-	return []byte(fmt.Sprintf(pattern, 512, 2, 512, sum512, sum512))
+	chunk512 := make([]byte, 512)
+
+	md := signatureMetadata{
+		ChunkSize:  512,
+		ChunkCount: 2,
+	}
+	md.write(buf)
+	writeChecksum(chunk512, buf)
+	writeChecksum(chunk512, buf)
+
+	return buf.Bytes()
 }
 
 func buildInput3() []byte {
@@ -109,16 +129,21 @@ func buildInput3() []byte {
 }
 
 func buildOutput3() []byte {
+	buf := new(bytes.Buffer)
 	chunkSize := 1 << 20
 	chunkCount := 640
-	metadata := []byte(fmt.Sprintf(METADATA_FORMAT, chunkSize, chunkCount, chunkSize))
-	data := []byte(fmt.Sprintf("%x", sha256.Sum256(make([]byte, chunkSize))))
-	var signature []byte
-	signature = append(signature, metadata...)
-	for i := 0; i < chunkCount; i++ {
-		signature = append(signature, data...)
+	chunk1M := make([]byte, chunkSize)
+
+	md := signatureMetadata{
+		ChunkSize:  uint32(chunkSize),
+		ChunkCount: uint32(chunkCount),
 	}
-	return signature
+	md.write(buf)
+	for i := 0; i < chunkCount; i++ {
+		writeChecksum(chunk1M, buf)
+	}
+
+	return buf.Bytes()
 }
 
 func TestComputeChunkSize(t *testing.T) {
@@ -130,7 +155,7 @@ func TestComputeChunkSize(t *testing.T) {
 		{
 			name:           "XS file",
 			fileSize:       2 << 10,
-			expectedResult: 512,
+			expectedResult: 32,
 		},
 		{
 			name:           "S file",
@@ -161,7 +186,7 @@ func TestComputeChunkSize(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, computeChunkSize(tc.fileSize), tc.expectedResult)
+			assert.Equal(t, tc.expectedResult, computeChunkSize(tc.fileSize))
 		})
 	}
 }

@@ -2,13 +2,18 @@ package signature
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"fmt"
+	"bytes"
 	"io"
 	"os"
 )
 
-const METADATA_FORMAT = "%d,%d,%d\n"
+func GetSignature(data []byte) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	len64 := int64(len(data))
+	chunkSize := computeChunkSize(len64)
+	err := createSignatureFile(io.NopCloser(bytes.NewReader(data)), len64, chunkSize, buf)
+	return buf.Bytes(), err
+}
 
 func Compute(inputFileName string, outputFile string) error {
 	f, err := os.Open(inputFileName)
@@ -37,22 +42,23 @@ func Compute(inputFileName string, outputFile string) error {
 func createSignatureFile(input io.ReadCloser, inputFileSize int64, chunkSize int, output io.Writer) error {
 	defer input.Close()
 
-	chunkCount := inputFileSize / int64(chunkSize)
+	md := signatureMetadata{}
+
+	chunkCount := uint32(inputFileSize / int64(chunkSize))
 	if inputFileSize%int64(chunkSize) > 0 {
 		chunkCount++
 	}
+	md.ChunkCount = chunkCount
+	md.ChunkSize = uint32(chunkSize)
 
-	lastChunkSize := chunkSize
-	if inputFileSize%int64(chunkSize) != 0 {
-		lastChunkSize = int(inputFileSize % int64(chunkSize))
-	}
+	err := md.write(output)
 
-	_, err := output.Write([]byte(fmt.Sprintf(METADATA_FORMAT, chunkSize, chunkCount, lastChunkSize)))
+	//err := binary.Write(output, binary.LittleEndian, binarySignature)
 	if err != nil {
 		return err
 	}
-
 	var totalBytesRead int64
+	var chunkIndex uint32
 	for {
 		chunk := make([]byte, chunkSize)
 		br, err := input.Read(chunk)
@@ -60,22 +66,39 @@ func createSignatureFile(input io.ReadCloser, inputFileSize int64, chunkSize int
 			return err
 		}
 		totalBytesRead += int64(br)
-		//Use only up to the number of bytes read from the reader to compute the sum
-		//The last chunk may be smaller than the rest
-		_, err = output.Write([]byte(fmt.Sprintf("%x", sha256.Sum256(chunk[:br]))))
+		//err = binary.Write(output, binary.LittleEndian, sha256.Sum256(chunk[:br]))
+		err = writeChecksum(chunk[:br], output)
 		if err != nil {
 			return err
 		}
 		if totalBytesRead == inputFileSize {
 			break
 		}
+		chunkIndex++
 	}
-
 	return nil
 }
 
+func BuildSignatureData(chunks [][]byte, chunkSize uint32) SignatureData {
+	chunksCount := len(chunks)
+	signatureData := SignatureData{
+		Metadata: signatureMetadata{
+			ChunkSize:  chunkSize,
+			ChunkCount: uint32(chunksCount),
+		},
+	}
+	signatureData.Checksums = make([]string, chunksCount)
+
+	for i := 0; i < chunksCount; i++ {
+		buf := new(bytes.Buffer)
+		writeChecksum(chunks[i], buf)
+		signatureData.Checksums[i] = buf.String()
+	}
+	return signatureData
+}
+
 func computeChunkSize(fileSize int64) int {
-	chunkSize := 512
+	chunkSize := 32
 	if fileSize > 5<<20 && fileSize <= 50<<20 {
 		chunkSize = 4 << 10 //4k
 	} else if fileSize > 50<<20 && fileSize <= 100<<20 {
